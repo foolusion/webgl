@@ -105,6 +105,7 @@ void setupBuffers() {
        -0.4,0.4,0.0,
        -0.3,0.6,0.0];
   gl.bufferData(GL.ARRAY_BUFFER, new Float32List.fromList(hexagonVertices), GL.STATIC_DRAW);
+  
   triangleVertexBuffer = gl.createBuffer();
   gl.bindBuffer(GL.ARRAY_BUFFER, triangleVertexBuffer);
   var triangleVertices =
@@ -161,7 +162,9 @@ void setupBuffers() {
 void draw() {
   gl.viewport(0, 0, viewportWidth, viewportHeight);
   gl.clear(GL.COLOR_BUFFER_BIT);
+  
   // draw the hexagon
+  gl.enableVertexAttribArray(vertexPositionAttribute);
   gl.disableVertexAttribArray(vertexColorAttribute);
   gl.vertexAttrib4f(vertexColorAttribute, 0.0, 0.0, 0.0, 1.0);
   gl.bindBuffer(GL.ARRAY_BUFFER, hexagonVertexBuffer);
@@ -175,6 +178,19 @@ void draw() {
   gl.bindBuffer(GL.ARRAY_BUFFER, triangleVertexColorBuffer);
   gl.vertexAttribPointer(vertexColorAttribute, triangleVertexColorBufferItemSize, GL.FLOAT, false, 0, 0);
   gl.drawArrays(GL.TRIANGLES, 0, triangleVertexBufferNumberOfItems);
+  
+  // draw the triangle strip
+  gl.disableVertexAttribArray(vertexColorAttribute);
+  gl.bindBuffer(GL.ARRAY_BUFFER, stripVertexBuffer);
+  gl.vertexAttribPointer(vertexPositionAttribute, stripVertexBufferItemSize, GL.FLOAT, false, 0, 0);
+  gl.vertexAttrib4f(vertexColorAttribute, 1.0, 1.0, 0.0, 1.0);
+  gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, stripElementBuffer);
+  gl.drawElements(GL.TRIANGLE_STRIP, stripElementBufferNumberOfItems, GL.UNSIGNED_SHORT, 0);
+  
+  // draw lines to make triangles visible
+  gl.vertexAttrib4f(vertexColorAttribute, 0.0, 0.0, 0.0, 1.0);
+  gl.drawArrays(GL.LINE_STRIP, 0, 11);
+  gl.drawArrays(GL.LINE_STRIP, 11, 11);
 }
 
 void main() {
