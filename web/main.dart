@@ -12,7 +12,20 @@ html.CanvasElement canvas;
 GL.Program shaderProgram;
 int vertexPositionAttribute;
 int vertexColorAttribute;
-GL.Buffer vertexBuffer;
+GL.Buffer hexagonVertexBuffer;
+int hexagonVertexBufferItemSize = 3;
+int hexagonVertexBufferNumberOfItems = 7;
+GL.Buffer triangleVertexBuffer;
+int triangleVertexBufferItemSize = 3;
+int triangleVertexBufferNumberOfItems = 3;
+GL.Buffer triangleVertexColorBuffer;
+int triangleVertexColorBufferItemSize = 4;
+int triangleVertexColorBufferNumberOfItems = 3;
+GL.Buffer stripVertexBuffer;
+int stripVertexBufferItemSize = 3;
+int stripVertexBufferNumberOfItems = 22;
+GL.Buffer stripElementBuffer;
+int stripElementBufferNumberOfItems = 25;
 
 GL.RenderingContext createGLContext(html.CanvasElement canvas) {
   var names = ['webgl', 'experimental-webgl'];
@@ -81,45 +94,87 @@ void main() {
 }
 
 void setupBuffers() {
-  vertexBuffer = gl.createBuffer();
-  gl.bindBuffer(GL.ARRAY_BUFFER, vertexBuffer);
-  var triangleVertices = [0.0, 0.5, 0.0, 255, 0, 0, 255, -0.5, -0.5, 0.0, 0, 255, 0, 255, 0.5, -0.5, 0.0, 0, 0, 255, 255];
-
-  var nbrOfVertices = 3;
-
-  var vertexSizeInBytes = 3 * Float32List.BYTES_PER_ELEMENT + 4 * Uint8List.BYTES_PER_ELEMENT;
-
-  var buffer = new Uint8List(nbrOfVertices * vertexSizeInBytes).buffer;
-  var positionView = new Float32List.view(buffer);
-  var colorView = new Uint8List.view(buffer);
+  hexagonVertexBuffer = gl.createBuffer();
+  gl.bindBuffer(GL.ARRAY_BUFFER, hexagonVertexBuffer);
+  var hexagonVertices = 
+      [-0.3,0.6,0.0,
+       -0.4,0.8,0.0,
+       -0.6,0.8,0.0,
+       -0.7,0.6,0.0,
+       -0.6,0.4,0.0,
+       -0.4,0.4,0.0,
+       -0.3,0.6,0.0];
+  gl.bufferData(GL.ARRAY_BUFFER, new Float32List.fromList(hexagonVertices), GL.STATIC_DRAW);
+  triangleVertexBuffer = gl.createBuffer();
+  gl.bindBuffer(GL.ARRAY_BUFFER, triangleVertexBuffer);
+  var triangleVertices =
+      [0.3,0.4,0.0,
+       0.7,0.4,0.0,
+       0.5,0.8,0.0];
+  gl.bufferData(GL.ARRAY_BUFFER, new Float32List.fromList(triangleVertices), GL.STATIC_DRAW);
   
-  var positionOffset = 0;
-  var colorOffset = 12;
-  var k = 0;
-  for (var i = 0; i < nbrOfVertices; i++) {
-    positionView[positionOffset] = triangleVertices[k];
-    positionView[1+positionOffset] = triangleVertices[1+k];
-    positionView[2+positionOffset] = triangleVertices[2+k];
-    colorView[colorOffset] = triangleVertices[3+k];
-    colorView[1+colorOffset] = triangleVertices[4+k];
-    colorView[2+colorOffset] = triangleVertices[5+k];
-    colorView[3+colorOffset] = triangleVertices[6+k];
-    
-    positionOffset += 4;
-    colorOffset += vertexSizeInBytes;
-    k += 7;
-  }
-  gl.bufferData(GL.ARRAY_BUFFER, buffer, GL.STATIC_DRAW);
+  triangleVertexColorBuffer = gl.createBuffer();
+  gl.bindBuffer(GL.ARRAY_BUFFER, triangleVertexColorBuffer);
+  var colors = 
+      [1.0,0.0,0.0,1.0,
+       0.0,1.0,0.0,1.0,
+       0.0,0.0,1.0,1.0];
+  gl.bufferData(GL.ARRAY_BUFFER, new Float32List.fromList(colors), GL.STATIC_DRAW);
+  
+  stripVertexBuffer = gl.createBuffer();
+  gl.bindBuffer(GL.ARRAY_BUFFER, stripVertexBuffer);
+  var stripVertices =
+      [-0.5,0.2,0.0,
+       -0.4,0.0,0.0,
+       -0.3,0.2,0.0,
+       -0.2,0.0,0.0,
+       -0.1,0.2,0.0,
+       0.0,0.0,0.0,
+       0.1,0.2,0.0,
+       0.2,0.0,0.0,
+       0.3,0.2,0.0,
+       0.4,0.0,0.0,
+       0.5,0.2,0.0,
+       // start of the second strip
+       -0.5,-0.3,0.0,
+       -0.4,-0.5,0.0,
+       -0.3,-0.3,0.0,
+       -0.2,-0.5,0.0,
+       -0.1,-0.3,0.0,
+        0.0,-0.5,0.0,
+        0.1,-0.3,0.0,
+        0.2,-0.5,0.0,
+        0.3,-0.3,0.0,
+        0.4,-0.5,0.0,
+        0.5,-0.3,0.0];
+  gl.bufferData(GL.ARRAY_BUFFER, new Float32List.fromList(stripVertices), GL.STATIC_DRAW);
+  
+  stripElementBuffer = gl.createBuffer();
+  gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, stripElementBuffer);
+  var indices =
+      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+       10, 10, 11, // extra indices for the degenerate triangles
+       11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
+  gl.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint16List.fromList(indices), GL.STATIC_DRAW);
 }
 
 void draw() {
   gl.viewport(0, 0, viewportWidth, viewportHeight);
   gl.clear(GL.COLOR_BUFFER_BIT);
-  gl.vertexAttribPointer(vertexPositionAttribute, 3, GL.FLOAT, false, 16, 0);
-  gl.vertexAttribPointer(vertexColorAttribute, 4, GL.UNSIGNED_BYTE, true, 16, 12);
-  gl.enableVertexAttribArray(vertexPositionAttribute);
+  // draw the hexagon
+  gl.disableVertexAttribArray(vertexColorAttribute);
+  gl.vertexAttrib4f(vertexColorAttribute, 0.0, 0.0, 0.0, 1.0);
+  gl.bindBuffer(GL.ARRAY_BUFFER, hexagonVertexBuffer);
+  gl.vertexAttribPointer(vertexPositionAttribute, hexagonVertexBufferItemSize, GL.FLOAT, false, 0, 0);
+  gl.drawArrays(GL.LINE_STRIP, 0, hexagonVertexBufferNumberOfItems);
+  
+  // draw the independent triangle
   gl.enableVertexAttribArray(vertexColorAttribute);
-  gl.drawArrays(GL.TRIANGLES, 0, 3);
+  gl.bindBuffer(GL.ARRAY_BUFFER, triangleVertexBuffer);
+  gl.vertexAttribPointer(vertexPositionAttribute, triangleVertexBufferItemSize, GL.FLOAT, false, 0, 0);
+  gl.bindBuffer(GL.ARRAY_BUFFER, triangleVertexColorBuffer);
+  gl.vertexAttribPointer(vertexColorAttribute, triangleVertexColorBufferItemSize, GL.FLOAT, false, 0, 0);
+  gl.drawArrays(GL.TRIANGLES, 0, triangleVertexBufferNumberOfItems);
 }
 
 void main() {
@@ -129,6 +184,9 @@ void main() {
   gl = createGLContext(canvas);
   setupShaders();
   setupBuffers();
-  gl.clearColor(0.0, 0.0, 0.0, 1.0);
+  gl.clearColor(1.0,1.0,1.0,1.0);
+  gl.frontFace(GL.CCW);
+  gl.enable(GL.CULL_FACE);
+  gl.cullFace(GL.BACK);
   draw();
 }
