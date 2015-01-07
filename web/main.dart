@@ -2,8 +2,11 @@
 // is governed by a BSD-style license that can be found in the LICENSE file.
 
 import 'dart:html' as html;
+import 'dart:math' as math;
 import 'dart:web_gl' as GL;
 import 'dart:typed_data';
+
+import 'package:vector_math/vector_math.dart';
 
 GL.RenderingContext gl;
 int viewportWidth;
@@ -12,20 +15,16 @@ html.CanvasElement canvas;
 GL.Program shaderProgram;
 int vertexPositionAttribute;
 int vertexColorAttribute;
-GL.Buffer hexagonVertexBuffer;
-int hexagonVertexBufferItemSize = 3;
-int hexagonVertexBufferNumberOfItems = 7;
-GL.Buffer triangleVertexBuffer;
-int triangleVertexBufferItemSize = 3;
-int triangleVertexBufferNumberOfItems = 3;
-GL.Buffer triangleVertexColorBuffer;
-int triangleVertexColorBufferItemSize = 4;
-int triangleVertexColorBufferNumberOfItems = 3;
-GL.Buffer stripVertexBuffer;
-int stripVertexBufferItemSize = 3;
-int stripVertexBufferNumberOfItems = 22;
-GL.Buffer stripElementBuffer;
-int stripElementBufferNumberOfItems = 25;
+GL.UniformLocation matrixUniform;
+
+GL.Buffer floorVertexPositionBuffer;
+GL.Buffer floorVertexIndexBuffer;
+GL.Buffer cubeVertexPositionBuffer;
+GL.Buffer cubeVertexIndexBuffer;
+
+Matrix4 modelViewMatrix;
+Matrix4 projectionMatrix;
+List<Matrix4> modelViewMatrixStack = [];
 
 GL.RenderingContext createGLContext(html.CanvasElement canvas) {
   var names = ['webgl', 'experimental-webgl'];
@@ -63,10 +62,11 @@ GL.Shader loadShader(type, shaderSource) {
 void setupShaders() {
   String vertexShaderSource = '''attribute vec3 aVertexPosition;
 attribute vec4 aVertexColor;
+uniform mat4 uMatrix;
 varying vec4 vColor;
 void main() {
   vColor = aVertexColor;
-  gl_Position = vec4(aVertexPosition, 1.0);
+  gl_Position = uMatrix * vec4(aVertexPosition, 1.0);
 }
 ''';
   String fragmentShaderSource = '''precision mediump float;
@@ -91,112 +91,133 @@ void main() {
 
   vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
   vertexColorAttribute = gl.getAttribLocation(shaderProgram, 'aVertexColor');
+  matrixUniform = gl.getUniformLocation(shaderProgram, "uMatrix");
+}
+
+void setupFloorBuffers() {
+  floorVertexPositionBuffer = gl.createBuffer();
+  gl.bindBuffer(GL.ARRAY_BUFFER, floorVertexPositionBuffer);
+  var floorVertexPosition =
+      [5.0,0.0,5.0,
+       5.0,0.0,-5.0,
+       -5.0,0.0,-5.0,
+       -5.0,0.0,5.0];
+  gl.bufferData(GL.ARRAY_BUFFER, new Float32List.fromList(floorVertexPosition), GL.STATIC_DRAW);
+  
+  floorVertexIndexBuffer = gl.createBuffer();
+  gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, floorVertexIndexBuffer);
+  var floorVertexIndices = [0,1,2,3];
+  gl.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint16List.fromList(floorVertexIndices), GL.STATIC_DRAW);
+}
+
+void setupCubeBuffers() {
+  cubeVertexPositionBuffer = gl.createBuffer();
+  gl.bindBuffer(GL.ARRAY_BUFFER, cubeVertexPositionBuffer);
+  var cubeVertexPosition =
+      [-1.0,1.0,-1.0,
+       -1.0,-1.0,-1.0,
+       1.0,1.0,-1.0,
+       1.0,-1.0,-1.0,
+       
+       -1.0,1.0,1.0,
+       -1.0,-1.0,1.0,
+       1.0,1.0,1.0,
+       1.0,-1.0,1.0];
+  gl.bufferData(GL.ARRAY_BUFFER, new Float32List.fromList(cubeVertexPosition), GL.STATIC_DRAW);
+  
+  cubeVertexIndexBuffer = gl.createBuffer();
+  gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
+  var cubeVertexIndices = 
+      [
+       0,1,2, 2,1,3,
+       2,3,6, 6,3,7,
+       4,5,0, 0,5,1,
+       6,7,4, 4,7,5,
+       4,0,6, 6,0,2,
+       1,5,3, 3,5,7];
+  gl.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint16List.fromList(cubeVertexIndices), GL.STATIC_DRAW);
 }
 
 void setupBuffers() {
-  hexagonVertexBuffer = gl.createBuffer();
-  gl.bindBuffer(GL.ARRAY_BUFFER, hexagonVertexBuffer);
-  var hexagonVertices = 
-      [-0.3,0.6,0.0,
-       -0.4,0.8,0.0,
-       -0.6,0.8,0.0,
-       -0.7,0.6,0.0,
-       -0.6,0.4,0.0,
-       -0.4,0.4,0.0,
-       -0.3,0.6,0.0];
-  gl.bufferData(GL.ARRAY_BUFFER, new Float32List.fromList(hexagonVertices), GL.STATIC_DRAW);
+  setupFloorBuffers();
+  setupCubeBuffers();
+}
+
+void drawFloor(double r, double g,double b, double a) {
+  Matrix4 m = projectionMatrix*modelViewMatrix;
+  gl.uniformMatrix4fv(matrixUniform, false, m.storage);
+  gl.vertexAttrib4f(vertexColorAttribute, r, g, b, a);
+  gl.enableVertexAttribArray(vertexPositionAttribute);
+  gl.bindBuffer(GL.ARRAY_BUFFER, floorVertexPositionBuffer);
+  gl.vertexAttribPointer(vertexPositionAttribute, 3, GL.FLOAT, false, 0, 0);
+  gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, floorVertexIndexBuffer);
+  gl.drawElements(GL.TRIANGLE_FAN, 4, GL.UNSIGNED_SHORT, 0);
+}
+
+void drawCube(double r, double g, double b, double a) {
+  Matrix4 m = projectionMatrix*modelViewMatrix;
+  gl.uniformMatrix4fv(matrixUniform, false, m.storage);
   
-  triangleVertexBuffer = gl.createBuffer();
-  gl.bindBuffer(GL.ARRAY_BUFFER, triangleVertexBuffer);
-  var triangleVertices =
-      [0.3,0.4,0.0,
-       0.7,0.4,0.0,
-       0.5,0.8,0.0];
-  gl.bufferData(GL.ARRAY_BUFFER, new Float32List.fromList(triangleVertices), GL.STATIC_DRAW);
+  gl.enableVertexAttribArray(vertexPositionAttribute);
+  gl.disableVertexAttribArray(vertexColorAttribute);
+  gl.vertexAttrib4f(vertexColorAttribute, r, g, b, a);
+  gl.bindBuffer(GL.ARRAY_BUFFER, cubeVertexPositionBuffer);
+  gl.vertexAttribPointer(vertexPositionAttribute, 3, GL.FLOAT, false, 0, 0);
+  gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
+  gl.drawElements(GL.TRIANGLES, 36, GL.UNSIGNED_SHORT, 0);
+}
+
+void drawTable(double r, double g, double b, double a) {
+  modelViewMatrixStack.add(new Matrix4.copy(modelViewMatrix));
+  modelViewMatrix.translate(0.0,1.0,0.0);
+  modelViewMatrix.scale(2.0,0.1,2.0);
+  drawCube(0.72, 0.53, 0.04, 1.0);
+  modelViewMatrix = modelViewMatrixStack.removeLast();
   
-  triangleVertexColorBuffer = gl.createBuffer();
-  gl.bindBuffer(GL.ARRAY_BUFFER, triangleVertexColorBuffer);
-  var colors = 
-      [1.0,0.0,0.0,1.0,
-       0.0,1.0,0.0,1.0,
-       0.0,0.0,1.0,1.0];
-  gl.bufferData(GL.ARRAY_BUFFER, new Float32List.fromList(colors), GL.STATIC_DRAW);
-  
-  stripVertexBuffer = gl.createBuffer();
-  gl.bindBuffer(GL.ARRAY_BUFFER, stripVertexBuffer);
-  var stripVertices =
-      [-0.5,0.2,0.0,
-       -0.4,0.0,0.0,
-       -0.3,0.2,0.0,
-       -0.2,0.0,0.0,
-       -0.1,0.2,0.0,
-       0.0,0.0,0.0,
-       0.1,0.2,0.0,
-       0.2,0.0,0.0,
-       0.3,0.2,0.0,
-       0.4,0.0,0.0,
-       0.5,0.2,0.0,
-       // start of the second strip
-       -0.5,-0.3,0.0,
-       -0.4,-0.5,0.0,
-       -0.3,-0.3,0.0,
-       -0.2,-0.5,0.0,
-       -0.1,-0.3,0.0,
-        0.0,-0.5,0.0,
-        0.1,-0.3,0.0,
-        0.2,-0.5,0.0,
-        0.3,-0.3,0.0,
-        0.4,-0.5,0.0,
-        0.5,-0.3,0.0];
-  gl.bufferData(GL.ARRAY_BUFFER, new Float32List.fromList(stripVertices), GL.STATIC_DRAW);
-  
-  stripElementBuffer = gl.createBuffer();
-  gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, stripElementBuffer);
-  var indices =
-      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
-       10, 10, 11, // extra indices for the degenerate triangles
-       11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
-  gl.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint16List.fromList(indices), GL.STATIC_DRAW);
+  for (var i =-1; i <= 1; i += 2) {
+    for (var j = -1; j <= 1; j += 2) {
+      modelViewMatrixStack.add(new Matrix4.copy(modelViewMatrix));
+      modelViewMatrix.translate(i*1.9, -0.1, j*1.9);
+      modelViewMatrix.scale(0.1, 1.0, 0.1);
+      drawCube(0.72,0.53,0.04,1.0);
+      modelViewMatrix = modelViewMatrixStack.removeLast();
+    }
+  }
 }
 
 void draw() {
   gl.viewport(0, 0, viewportWidth, viewportHeight);
   gl.clear(GL.COLOR_BUFFER_BIT);
   
-  // draw the hexagon
-  gl.enableVertexAttribArray(vertexPositionAttribute);
-  gl.disableVertexAttribArray(vertexColorAttribute);
-  gl.vertexAttrib4f(vertexColorAttribute, 0.0, 0.0, 0.0, 1.0);
-  gl.bindBuffer(GL.ARRAY_BUFFER, hexagonVertexBuffer);
-  gl.vertexAttribPointer(vertexPositionAttribute, hexagonVertexBufferItemSize, GL.FLOAT, false, 0, 0);
-  gl.drawArrays(GL.LINE_STRIP, 0, hexagonVertexBufferNumberOfItems);
+  var top = .1 * math.tan(math.PI/8);
+  var bottom = -top;
+  var left = bottom*4/3;
+  var right = top*4/3;
   
-  // draw the independent triangle
-  gl.enableVertexAttribArray(vertexColorAttribute);
-  gl.bindBuffer(GL.ARRAY_BUFFER, triangleVertexBuffer);
-  gl.vertexAttribPointer(vertexPositionAttribute, triangleVertexBufferItemSize, GL.FLOAT, false, 0, 0);
-  gl.bindBuffer(GL.ARRAY_BUFFER, triangleVertexColorBuffer);
-  gl.vertexAttribPointer(vertexColorAttribute, triangleVertexColorBufferItemSize, GL.FLOAT, false, 0, 0);
-  gl.drawArrays(GL.TRIANGLES, 0, triangleVertexBufferNumberOfItems);
+  projectionMatrix = makeFrustumMatrix(left, right, bottom, top, 0.1, 100);
+  modelViewMatrix = makeViewMatrix(new Vector3(8.0,5.0,-10.0), new Vector3.zero(), new Vector3(0.0,1.0,0.0));
   
-  // draw the triangle strip
-  gl.disableVertexAttribArray(vertexColorAttribute);
-  gl.bindBuffer(GL.ARRAY_BUFFER, stripVertexBuffer);
-  gl.vertexAttribPointer(vertexPositionAttribute, stripVertexBufferItemSize, GL.FLOAT, false, 0, 0);
-  gl.vertexAttrib4f(vertexColorAttribute, 1.0, 1.0, 0.0, 1.0);
-  gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, stripElementBuffer);
-  gl.drawElements(GL.TRIANGLE_STRIP, stripElementBufferNumberOfItems, GL.UNSIGNED_SHORT, 0);
+  modelViewMatrixStack.add(new Matrix4.copy(modelViewMatrix));
+  drawFloor(1.0, 0.0, 0.0, 1.0);
+  modelViewMatrix = modelViewMatrixStack.removeLast();
   
-  // draw lines to make triangles visible
-  gl.vertexAttrib4f(vertexColorAttribute, 0.0, 0.0, 0.0, 1.0);
-  gl.drawArrays(GL.LINE_STRIP, 0, 11);
-  gl.drawArrays(GL.LINE_STRIP, 11, 11);
+  modelViewMatrixStack.add(new Matrix4.copy(modelViewMatrix));
+  modelViewMatrix.translate(0.0, 1.1, 0.0);
+  drawTable(1.0, 0.0, 0.0, 1.0);
+  modelViewMatrix = modelViewMatrixStack.removeLast();
+  
+  // draw cube
+  modelViewMatrixStack.add(new Matrix4.copy(modelViewMatrix));
+  modelViewMatrix.translate(0.0, 2.7, 0.0);
+  modelViewMatrix.scale(.5);
+  drawCube(0.0, 0.0, 1.0, 1.0);
+  modelViewMatrix = modelViewMatrixStack.removeLast();
 }
 
 void main() {
   canvas = html.querySelector('#screen');
-  canvas.width = html.window.innerWidth;
-  canvas.height = html.window.innerHeight;
+  canvas.width = 640;
+  canvas.height = 480;
   gl = createGLContext(canvas);
   setupShaders();
   setupBuffers();
