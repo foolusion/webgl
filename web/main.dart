@@ -8,23 +8,69 @@ import 'dart:typed_data';
 
 import 'package:vector_math/vector_math.dart';
 
+class ImageLoader {
+  Map<String, html.ImageElement> images = {};
+  Map<String, GL.Texture> textures = {};
+  List<String> loading = [];
+  int numLoaded = 0;
+  
+  downloadAll(Function callback) {
+    if (loading.length == 0) {
+      callback();
+    }
+    for (String src in loading) {
+      loadImage(src, callback);
+    }
+  }
+  
+  addImage(String src) {
+    loading.add(src);
+  }
+  
+  loadImage(String src, Function callback) {
+    html.ImageElement img = new html.ImageElement();
+    img.onLoad.listen((html.Event e) {
+      numLoaded++;
+      createTextureFromImage(src);
+      if (numLoaded == loading.length) {
+        callback();
+      }
+    });
+    img.src = src;
+    images[src] = img;
+    textures[src] = gl.createTexture();
+  }
+  
+  createTextureFromImage(String src) {
+    gl.bindTexture(GL.TEXTURE_2D, textures[src]);
+    gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, GL.ONE);
+    gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, GL.RGBA, GL.UNSIGNED_BYTE, images[src]);
+    gl.bindTexture(GL.TEXTURE_2D, null);
+  }
+}
+
 GL.RenderingContext gl;
 int viewportWidth;
 int viewportHeight;
 html.CanvasElement canvas;
 GL.Program shaderProgram;
 int vertexPositionAttribute;
-int vertexColorAttribute;
+int textureCoordinateAttribute;
 GL.UniformLocation matrixUniform;
+GL.UniformLocation samplerUniform;
 
 GL.Buffer floorVertexPositionBuffer;
 GL.Buffer floorVertexIndexBuffer;
+GL.Buffer floorTextureCoordinateBuffer;
 GL.Buffer cubeVertexPositionBuffer;
 GL.Buffer cubeVertexIndexBuffer;
+GL.Buffer cubeTextureCoordinateBuffer;
 
 Matrix4 modelViewMatrix;
 Matrix4 projectionMatrix;
 List<Matrix4> modelViewMatrixStack = [];
+
+ImageLoader il = new ImageLoader();
 
 GL.RenderingContext createGLContext(html.CanvasElement canvas) {
   var names = ['webgl', 'experimental-webgl'];
@@ -61,18 +107,19 @@ GL.Shader loadShader(type, shaderSource) {
 
 void setupShaders() {
   String vertexShaderSource = '''attribute vec3 aVertexPosition;
-attribute vec4 aVertexColor;
+attribute vec2 aTextureCoordinate;
 uniform mat4 uMatrix;
-varying vec4 vColor;
+varying vec2 vTextureCoordinates;
 void main() {
-  vColor = aVertexColor;
+  vTextureCoordinates = aTextureCoordinate;
   gl_Position = uMatrix * vec4(aVertexPosition, 1.0);
 }
 ''';
   String fragmentShaderSource = '''precision mediump float;
-varying vec4 vColor;
+varying vec2 vTextureCoordinates;
+uniform sampler2D uSampler;
 void main() {
-  gl_FragColor = vColor;
+  gl_FragColor = texture2D(uSampler, vTextureCoordinates);
 }
 ''';
   var vertexShader = loadShader(GL.VERTEX_SHADER, vertexShaderSource);
@@ -90,8 +137,9 @@ void main() {
   gl.useProgram(shaderProgram);
 
   vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
-  vertexColorAttribute = gl.getAttribLocation(shaderProgram, 'aVertexColor');
+  textureCoordinateAttribute = gl.getAttribLocation(shaderProgram, 'aTextureCoordinate');
   matrixUniform = gl.getUniformLocation(shaderProgram, "uMatrix");
+  samplerUniform = gl.getUniformLocation(shaderProgram, 'uSampler');
 }
 
 void setupFloorBuffers() {
@@ -108,34 +156,69 @@ void setupFloorBuffers() {
   gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, floorVertexIndexBuffer);
   var floorVertexIndices = [0,1,2,3];
   gl.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint16List.fromList(floorVertexIndices), GL.STATIC_DRAW);
+  
+  floorTextureCoordinateBuffer = gl.createBuffer();
+  gl.bindBuffer(GL.ARRAY_BUFFER, floorTextureCoordinateBuffer);
+  var floorTextureCoordinates = 
+      [1.0, 0.0,
+       1.0, 1.0,
+       0.0, 1.0,
+       0.0, 0.0];
+  gl.bufferData(GL.ARRAY_BUFFER, new Float32List.fromList(floorTextureCoordinates), GL.STATIC_DRAW);
 }
 
 void setupCubeBuffers() {
   cubeVertexPositionBuffer = gl.createBuffer();
   gl.bindBuffer(GL.ARRAY_BUFFER, cubeVertexPositionBuffer);
   var cubeVertexPosition =
-      [-1.0,1.0,-1.0,
-       -1.0,-1.0,-1.0,
-       1.0,1.0,-1.0,
-       1.0,-1.0,-1.0,
-       
-       -1.0,1.0,1.0,
-       -1.0,-1.0,1.0,
-       1.0,1.0,1.0,
-       1.0,-1.0,1.0];
+      [
+       -1.0,1.0,1.0, // v0
+       1.0,1.0,1.0, // v1
+       -1.0,1.0,1.0, // v2
+       -1.0,1.0,-1.0, // v3
+       1.0,1.0,-1.0, // v4
+       1.0,1.0,1.0, // v5
+       -1.0,-1.0,1.0, // v6
+       -1.0,-1.0,-1.0, // v7
+       1.0,-1.0,-1.0, // v8
+       1.0,-1.0,1.0, // v9
+       -1.0,-1.0,1.0, // v10
+       1.0,-1.0,1.0, // v11
+       -1.0,1.0,1.0, // v12
+       1.0,1.0,1.0, // v13
+      ];
   gl.bufferData(GL.ARRAY_BUFFER, new Float32List.fromList(cubeVertexPosition), GL.STATIC_DRAW);
   
   cubeVertexIndexBuffer = gl.createBuffer();
   gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
   var cubeVertexIndices = 
       [
-       0,1,2, 2,1,3,
-       2,3,6, 6,3,7,
-       4,5,0, 0,5,1,
-       6,7,4, 4,7,5,
-       4,0,6, 6,0,2,
-       1,5,3, 3,5,7];
+        0,1,3, 3,1,4,
+        2,3,6, 6,3,7,
+        3,4,7, 7,4,8,
+        4,5,8, 8,5,9,
+        7,8,10, 10,8,11,
+        10,11,12, 12,11,13
+       ];
   gl.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint16List.fromList(cubeVertexIndices), GL.STATIC_DRAW);
+  cubeTextureCoordinateBuffer = gl.createBuffer();
+  gl.bindBuffer(GL.ARRAY_BUFFER, cubeTextureCoordinateBuffer);
+  var cubeTextureCoordinates = 
+      [0.33, 1.0,
+       0.66, 1.0,
+       0.0, 0.75,
+       0.33, 0.75,
+       0.66, 0.75,
+       1.0, 0.75,
+       0.0, 0.5,
+       0.33, 0.5,
+       0.66, 0.5,
+       1.0, 0.5,
+       0.33, 0.25,
+       0.66, 0.25,
+       0.33, 0.0,
+       0.66, 0.0];
+  gl.bufferData(GL.ARRAY_BUFFER, new Float32List.fromList(cubeTextureCoordinates), GL.STATIC_DRAW);
 }
 
 void setupBuffers() {
@@ -143,35 +226,52 @@ void setupBuffers() {
   setupCubeBuffers();
 }
 
-void drawFloor(double r, double g,double b, double a) {
+void drawFloor(String src) {
   Matrix4 m = projectionMatrix*modelViewMatrix;
   gl.uniformMatrix4fv(matrixUniform, false, m.storage);
-  gl.vertexAttrib4f(vertexColorAttribute, r, g, b, a);
   gl.enableVertexAttribArray(vertexPositionAttribute);
   gl.bindBuffer(GL.ARRAY_BUFFER, floorVertexPositionBuffer);
   gl.vertexAttribPointer(vertexPositionAttribute, 3, GL.FLOAT, false, 0, 0);
+
+  gl.enableVertexAttribArray(textureCoordinateAttribute);
+  gl.bindBuffer(GL.ARRAY_BUFFER, floorTextureCoordinateBuffer);
+  gl.vertexAttribPointer(textureCoordinateAttribute, 2, GL.FLOAT, false, 0, 0);
+  gl.activeTexture(GL.TEXTURE0);
+  gl.bindTexture(GL.TEXTURE_2D, il.textures[src]);
+  gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+  gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+  gl.uniform1i(samplerUniform, 0);
+  
   gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, floorVertexIndexBuffer);
   gl.drawElements(GL.TRIANGLE_FAN, 4, GL.UNSIGNED_SHORT, 0);
 }
 
-void drawCube(double r, double g, double b, double a) {
+void drawCube(String src) {
   Matrix4 m = projectionMatrix*modelViewMatrix;
   gl.uniformMatrix4fv(matrixUniform, false, m.storage);
   
   gl.enableVertexAttribArray(vertexPositionAttribute);
-  gl.disableVertexAttribArray(vertexColorAttribute);
-  gl.vertexAttrib4f(vertexColorAttribute, r, g, b, a);
   gl.bindBuffer(GL.ARRAY_BUFFER, cubeVertexPositionBuffer);
   gl.vertexAttribPointer(vertexPositionAttribute, 3, GL.FLOAT, false, 0, 0);
+  
+  gl.enableVertexAttribArray(textureCoordinateAttribute);
+  gl.bindBuffer(GL.ARRAY_BUFFER, cubeTextureCoordinateBuffer);
+  gl.vertexAttribPointer(textureCoordinateAttribute, 2, GL.FLOAT, false, 0, 0);
+  gl.activeTexture(GL.TEXTURE0);
+  gl.bindTexture(GL.TEXTURE_2D, il.textures[src]);
+  gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+  gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+  gl.uniform1i(samplerUniform, 0);
+  
   gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
   gl.drawElements(GL.TRIANGLES, 36, GL.UNSIGNED_SHORT, 0);
 }
 
-void drawTable(double r, double g, double b, double a) {
+void drawTable(String src) {
   modelViewMatrixStack.add(new Matrix4.copy(modelViewMatrix));
   modelViewMatrix.translate(0.0,1.0,0.0);
   modelViewMatrix.scale(2.0,0.1,2.0);
-  drawCube(0.72, 0.53, 0.04, 1.0);
+  drawCube(src);
   modelViewMatrix = modelViewMatrixStack.removeLast();
   
   for (var i =-1; i <= 1; i += 2) {
@@ -179,7 +279,7 @@ void drawTable(double r, double g, double b, double a) {
       modelViewMatrixStack.add(new Matrix4.copy(modelViewMatrix));
       modelViewMatrix.translate(i*1.9, -0.1, j*1.9);
       modelViewMatrix.scale(0.1, 1.0, 0.1);
-      drawCube(0.72,0.53,0.04,1.0);
+      drawCube(src);
       modelViewMatrix = modelViewMatrixStack.removeLast();
     }
   }
@@ -195,22 +295,22 @@ void draw() {
   var right = top*4/3;
   
   projectionMatrix = makeFrustumMatrix(left, right, bottom, top, 0.1, 100);
-  modelViewMatrix = makeViewMatrix(new Vector3(8.0,5.0,-10.0), new Vector3.zero(), new Vector3(0.0,1.0,0.0));
+  modelViewMatrix = makeViewMatrix(new Vector3(-5.0,10.0,-10.0), new Vector3.zero(), new Vector3(0.0,1.0,0.0));
   
   modelViewMatrixStack.add(new Matrix4.copy(modelViewMatrix));
-  drawFloor(1.0, 0.0, 0.0, 1.0);
+  drawFloor("res/texture.png");
   modelViewMatrix = modelViewMatrixStack.removeLast();
   
   modelViewMatrixStack.add(new Matrix4.copy(modelViewMatrix));
   modelViewMatrix.translate(0.0, 1.1, 0.0);
-  drawTable(1.0, 0.0, 0.0, 1.0);
+  drawTable("res/texture.png");
   modelViewMatrix = modelViewMatrixStack.removeLast();
   
   // draw cube
   modelViewMatrixStack.add(new Matrix4.copy(modelViewMatrix));
   modelViewMatrix.translate(0.0, 2.7, 0.0);
   modelViewMatrix.scale(.5);
-  drawCube(0.0, 0.0, 1.0, 1.0);
+  drawCube("res/texture.png");
   modelViewMatrix = modelViewMatrixStack.removeLast();
 }
 
@@ -225,5 +325,7 @@ void main() {
   gl.frontFace(GL.CCW);
   gl.enable(GL.CULL_FACE);
   gl.cullFace(GL.BACK);
-  draw();
+  gl.enable(GL.DEPTH_TEST);
+  il.addImage("res/texture.png");
+  il.downloadAll(draw);
 }
