@@ -171,7 +171,7 @@ void setupCubeBuffers() {
   gl.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint16List.fromList(cubeVertexIndices), GL.STATIC_DRAW);
   cubeTextureCoordinateBuffer = gl.createBuffer();
   gl.bindBuffer(GL.ARRAY_BUFFER, cubeTextureCoordinateBuffer);
-  var cubeTextureCoordinates = [0.33, 1.0, 0.66, 1.0, 0.0, 0.75, 0.33, 0.75, 0.66, 0.75, 1.0, 0.75, 0.0, 0.5, 0.33, 0.5, 0.66, 0.5, 1.0, 0.5, 0.33, 0.25, 0.66, 0.25, 0.33, 0.0, 0.66, 0.0];
+  var cubeTextureCoordinates = [0.25, 1.0, 0.5, 1.0, 0.0, 0.75, 0.25, 0.75, 0.5, 0.75, 0.75, 0.75, 0.0, 0.5, 0.25, 0.5, 0.5, 0.5, 0.75, 0.5, 0.25, 0.25, 0.5, 0.25, 0.25, 0.0, 0.5, 0.0];
   gl.bufferData(GL.ARRAY_BUFFER, new Float32List.fromList(cubeTextureCoordinates), GL.STATIC_DRAW);
 }
 
@@ -245,11 +245,12 @@ void draw() {
 
   var top = .1 * math.tan(math.PI / 8);
   var bottom = -top;
-  var left = bottom * 4 / 3;
-  var right = top * 4 / 3;
+  var aspect = canvas.width / canvas.height;
+  var left = bottom * aspect;
+  var right = top * aspect;
 
   projectionMatrix = makeFrustumMatrix(left, right, bottom, top, 0.1, 100);
-  modelViewMatrix = makeViewMatrix(new Vector3(-5.0, 10.0, -10.0), new Vector3.zero(), new Vector3(0.0, 1.0, 0.0));
+  modelViewMatrix = makeViewMatrix(new Vector3(-5.0, 5.0, 20.0), new Vector3(5.0, 0.0, -20.0), new Vector3(0.0, 1.0, 0.0));
 
   modelViewMatrixStack.add(new Matrix4.copy(modelViewMatrix));
   drawFloor("res/texture.png");
@@ -270,8 +271,8 @@ void draw() {
 
 void main() {
   canvas = html.querySelector('#screen');
-  canvas.width = 640;
-  canvas.height = 480;
+  canvas.width = html.window.innerWidth;
+  canvas.height = html.window.innerHeight;
   gl = createGLContext(canvas);
   setupShaders();
   setupBuffers();
